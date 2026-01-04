@@ -1,0 +1,79 @@
+body {
+    background: linear-gradient(135deg, #ff9ac1, #6fc1ff); /* Pink to Blue */
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    min-height: 100vh;
+}
+
+h2 {
+    color: #ffffff;
+}
+
+.chat-card {
+    max-width: 800px;
+    margin: auto;
+    border-radius: 15px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    background-color: #ffffff;
+}
+
+.chat-window {
+    height: 400px;
+    overflow-y: auto;
+    background: #f9f9f9;
+    padding: 15px;
+}
+
+.agent-message {
+    background-color: #e9f7ef;
+    padding: 10px 15px;
+    border-radius: 15px;
+    max-width: 75%;
+    margin-bottom: 10px;
+}
+
+.user-message {
+    background-color: #d1e7ff;
+    padding: 10px 15px;
+    border-radius: 15px;
+    max-width: 75%;
+    margin-left: auto;
+    text-align: right;
+    margin-bottom: 10px;
+}
+
+input.form-control {
+    border-radius: 50px;
+}
+
+button.btn {
+    border-radius: 50px;
+}
+
+/* Collapsible sections styling */
+.section-card {
+    background-color: #f1f3f5;
+    padding: 10px;
+    border-radius: 10px;
+    margin-bottom: 10px;
+}
+
+.section-header {
+    font-weight: bold;
+    cursor: pointer;
+}
+
+/* Voucher badges */
+.badge-available {
+    background-color: #28a745;
+    color: #fff;
+    padding: 3px 8px;
+    border-radius: 5px;
+}
+
+.badge-expired {
+    background-color: #dc3545;
+    color: #fff;
+    padding: 3px 8px;
+    border-radius: 5px;
+}

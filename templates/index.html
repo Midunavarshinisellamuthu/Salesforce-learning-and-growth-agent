@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Salesforce Learning Assistant</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        :root {
+            --primary: #0176d3;
+            --primary-dark: #0b5cab;
+            --secondary: #f4f6f9;
+            --text: #2e2e2e;
+            --text-light: #6c757d;
+            --bg: #f8fafc;
+            --card-bg: #ffffff;
+            --shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            --border-radius: 12px;
+            --transition: all 0.3s ease;
+        }
+
+        body {
+            background: var(--bg);
+            font-family: 'Inter', 'Segoe UI', sans-serif;
+            color: var(--text);
+            line-height: 1.6;
+            padding: 2rem 0;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e4e8f0 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 1rem;
+        }
+
+        h1 {
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 2rem;
+            text-align: center;
+            position: relative;
+            padding-bottom: 1rem;
+        }
+
+        h1:after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80px;
+            height: 4px;
+            background: var(--primary);
+            border-radius: 2px;
+        }
+
+        .chat-container {
+            max-height: 500px;
+            overflow-y: auto;
+            padding: 1.5rem;
+            background: var(--card-bg);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            margin-bottom: 1.5rem;
+            border: 1px solid rgba(0, 0, 0, 0.05);
+        }
+
+        .message {
+            display: flex;
+            margin-bottom: 1.25rem;
+            align-items: flex-start;
+            opacity: 0;
+            animation: fadeIn 0.3s ease forwards;
+        }
+
+        @keyframes fadeIn {
+            to { opacity: 1; }
+        }
+
+        .message.user {
+            justify-content: flex-end;
+        }
+
+        .message.ai {
+            justify-content: flex-start;
+        }
+
+        .message .avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 12px;
+            flex-shrink: 0;
+            color: white;
+            font-weight: 600;
+        }
+
+        .message.user .avatar {
+            background: var(--primary);
+        }
+
+        .message.ai .avatar {
+            background: #7f8c9b;
+        }
+
+        .message .content-wrapper {
+            max-width: 75%;
+        }
+
+        .message .content {
+            padding: 0.8rem 1.2rem;
+            border-radius: var(--border-radius);
+            line-height: 1.5;
+            word-wrap: break-word;
+            overflow-wrap: anywhere;
+            white-space: pre-wrap; /* preserve newlines from backend */
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            position: relative;
+            transition: var(--transition);
+        }
+
+        .message.user .content {
+            background: var(--primary);
+            color: white;
+            border-radius: 18px 18px 4px 18px;
+        }
+
+        .message.ai .content {
+            background: var(--secondary);
+            color: var(--text);
+            border-radius: 18px 18px 18px 4px;
+        }
+
+        /* Styling for formatted content inside messages */
+        .message .content ul {
+            margin: 0.5rem 0 0.25rem 1.25rem;
+            padding: 0;
+        }
+        .message .content li { margin-bottom: 0.25rem; }
+        .message .content a {
+            color: var(--primary-dark);
+            text-decoration: underline;
+            word-break: break-all;
+        }
+
+        .timestamp {
+            font-size: 0.7rem;
+            color: var(--text-light);
+            margin-top: 4px;
+            opacity: 0.8;
+            display: block;
+            text-align: right;
+        }
+
+        .data-section {
+            max-height: 250px;
+            overflow-y: auto;
+            padding: 0.5rem;
+            border-radius: var(--border-radius);
+            background: rgba(255, 255, 255, 0.6);
+        }
+
+        .badge-custom {
+            margin: 0.25rem;
+            font-size: 0.8rem;
+            padding: 0.4em 0.8em;
+            border-radius: 50px;
+            font-weight: 500;
+            transition: var(--transition);
+            border: 1px solid transparent;
+        }
+
+        .badge-custom:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .badge-custom.clickable {
+            cursor: pointer;
+        }
+
+        .accordion-item {
+            margin-bottom: 1rem;
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            border-radius: var(--border-radius) !important;
+            overflow: hidden;
+            background: var(--card-bg);
+            box-shadow: var(--shadow);
+        }
+
+        .accordion-button {
+            font-weight: 600;
+            padding: 1rem 1.5rem;
+            background: var(--card-bg);
+            color: var(--text);
+            transition: var(--transition);
+        }
+
+        .accordion-button:not(.collapsed) {
+            background: var(--primary);
+            color: white;
+            box-shadow: none;
+        }
+
+        .accordion-button:focus {
+            box-shadow: none;
+            border-color: transparent;
+        }
+
+        .accordion-body {
+            padding: 1.5rem;
+        }
+
+        .form-control {
+            border: 1px solid #e0e0e0;
+            padding: 0.8rem 1.2rem;
+            border-radius: 8px;
+            transition: var(--transition);
+        }
+
+        .form-control:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 0.2rem rgba(1, 118, 211, 0.15);
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            border: none;
+            padding: 0.8rem 2rem;
+            border-radius: 8px;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+            transition: var(--transition);
+            text-transform: uppercase;
+            font-size: 0.9rem;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(1, 118, 211, 0.3);
+        }
+
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+
+        .card {
+            border: none;
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+            transition: var(--transition);
+            background: var(--card-bg);
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .message .content-wrapper {
+                max-width: 85%;
+            }
+            
+            .chat-container {
+                padding: 1rem;
+                max-height: 400px;
+            }
+            
+            .message .content {
+                padding: 0.6rem 1rem;
+                font-size: 0.95rem;
+            }
+        }
+
+        /* Loading animation */
+        .typing-indicator {
+            display: flex;
+            padding: 1rem 1.5rem;
+            background: var(--secondary);
+            border-radius: 18px 18px 18px 4px;
+            width: fit-content;
+            margin-bottom: 1.25rem;
+        }
+
+        .typing-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--text-light);
+            border-radius: 50%;
+            margin: 0 2px;
+            animation: typing 1.4s infinite ease-in-out;
+        }
+
+        .typing-dot:nth-child(1) { animation-delay: 0s; }
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-5px); }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1 class="text-center mb-4">Salesforce Learning And Growth Agent</h1>
+
+    <!-- Chat History -->
+    <div class="chat-container" id="chat-container">
+        {% for chat in chat_history %}
+        <div class="message user">
+            <div class="avatar">
+                <i class="fas fa-user"></i>
+            </div>
+            <div class="content-wrapper">
+                <div class="content">
+                    {{ chat.question }}
+                    <span class="timestamp">{{ chat.timestamp if chat.timestamp else "" }}</span>
+                </div>
+            </div>
+        </div>
+        <div class="message ai">
+            <div class="avatar">
+                <i class="fas fa-robot"></i>
+            </div>
+            <div class="content-wrapper">
+                <div class="content">
+                    {{ chat.answer }}
+                    <span class="timestamp">{{ chat.timestamp if chat.timestamp else "" }}</span>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Question Form -->
+    <div class="card mb-4">
+        <div class="card-body p-4">
+            <form method="post" id="question-form" class="needs-validation" novalidate>
+                <div class="input-group mb-3">
+                    <input type="text" 
+                           class="form-control form-control-lg" 
+                           name="question" 
+                           placeholder="Ask me anything about Salesforce products, learning materials, or vouchers..." 
+                           required
+                           aria-label="Ask a question">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-paper-plane me-2"></i>Send
+                    </button>
+                </div>
+                <div class="form-text text-muted">
+                    <small>Try asking: "What learning materials are available for Salesforce Admin?"</small>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Salesforce Data Cards -->
+    <div class="row g-4">
+        <!-- Products Card -->
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-box-open me-2"></i>Products
+                    </h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="data-section p-3" id="products-section">
+                        {% for p in products %}
+                        <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 badge-custom">
+                            <i class="fas fa-cube me-1"></i>{{ p }}
+                        </span>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Learning Materials Card -->
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-graduation-cap me-2"></i>Learning Materials
+                    </h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="data-section p-3" id="learning-section">
+                        {% for l in learning %}
+                        <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 badge-custom">
+                            <i class="fas fa-book me-1"></i>{{ l.material }} ({{ l.product }})
+                        </span>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Vouchers Card -->
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-header bg-warning">
+                    <h5 class="mb-0">
+                        <i class="fas fa-certificate me-2"></i>Certification Vouchers
+                    </h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="data-section p-3" id="vouchers-section">
+                        {% for v in vouchers %}
+                        <span class="badge bg-warning bg-opacity-10 text-warning-emphasis border border-warning border-opacity-25 badge-custom clickable" data-code="{{ v.voucher_code }}" role="button" tabindex="0" title="Click to copy voucher code">
+                            <i class="fas fa-ticket-alt me-1"></i>{{ v.name }} - {{ v.voucher_code }} ({{ v.product }}) [{{ v.status }}]
+                        </span>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Real-time Salesforce updates -->
+<script>
+// Add typing indicator
+function showTypingIndicator() {
+    const chatContainer = document.getElementById('chat-container');
+    const typingDiv = document.createElement('div');
+    typingDiv.className = 'message ai';
+    typingDiv.id = 'typing-indicator';
+    typingDiv.innerHTML = `
+        <div class="avatar">
+            <i class="fas fa-robot"></i>
+        </div>
+        <div class="content-wrapper">
+            <div class="typing-indicator">
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+            </div>
+        </div>
+    `;
+    chatContainer.appendChild(typingDiv);
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+}
+
+// Remove typing indicator
+function hideTypingIndicator() {
+    const typingIndicator = document.getElementById('typing-indicator');
+    if (typingIndicator) {
+        typingIndicator.remove();
+    }
+}
+
+// --- Format plain text messages into readable HTML ---
+function escapeHtml(str) {
+    return str.replace(/[&<>"']/g, ch => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    })[ch]);
+}
+
+function linkify(text) {
+    const urlRegex = /(https?:\/\/[^\s)]+)(?![^<]*>|[^&]*;)/g;
+    return text.replace(urlRegex, url => `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`);
+}
+
+function formatMessageText(rawText) {
+    if (!rawText) return '';
+    const lines = rawText.split(/\r?\n/);
+    let html = '';
+    let inList = false;
+
+    const openList = () => { if (!inList) { html += '<ul>'; inList = true; } };
+    const closeList = () => { if (inList) { html += '</ul>'; inList = false; } };
+
+    lines.forEach(line => {
+        const trimmed = line.trim();
+        if (/^[*-]\s+/.test(trimmed)) {
+            openList();
+            const item = trimmed.replace(/^[*-]\s+/, '');
+            html += `<li>${linkify(escapeHtml(item))}</li>`;
+        } else if (trimmed.length === 0) {
+            closeList();
+            html += '<br />';
+        } else {
+            closeList();
+            html += linkify(escapeHtml(trimmed)) + ' ';
+        }
+    });
+    closeList();
+    return html.trim();
+}
+
+function applyMessageFormatting() {
+    document.querySelectorAll('.message .content').forEach(el => {
+        if (el.dataset.formatted === '1') return;
+        const clone = el.cloneNode(true);
+        clone.querySelectorAll('.timestamp').forEach(n => n.remove());
+        const msgText = clone.textContent.trim();
+        const ts = el.querySelector('.timestamp');
+        const tsHtml = ts ? ts.outerHTML : '';
+        el.innerHTML = formatMessageText(msgText) + tsHtml;
+        el.dataset.formatted = '1';
+    });
+}
+
+// Enhanced fetch data with loading states
+async function fetchData() {
+    try {
+        const res = await fetch('/data');
+        const data = await res.json();
+
+        // Update Products
+        const prodSection = document.getElementById('products-section');
+        if (prodSection) {
+            prodSection.innerHTML = '';
+            data.products.forEach(p => {
+                const span = document.createElement('span');
+                span.className = 'badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 badge-custom';
+                span.innerHTML = `<i class="fas fa-cube me-1"></i>${p}`;
+                prodSection.appendChild(span);
+            });
+        }
+
+        // Update Learning Materials
+        const learnSection = document.getElementById('learning-section');
+        if (learnSection) {
+            learnSection.innerHTML = '';
+            data.learning.forEach(l => {
+                const span = document.createElement('span');
+                span.className = 'badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 badge-custom';
+                span.innerHTML = `<i class="fas fa-book me-1"></i>${l.material} (${l.product})`;
+                learnSection.appendChild(span);
+            });
+        }
+
+        // Update Vouchers
+        const voucherSection = document.getElementById('vouchers-section');
+        if (voucherSection) {
+            voucherSection.innerHTML = '';
+            data.vouchers.forEach(v => {
+                const span = document.createElement('span');
+                span.className = 'badge bg-warning bg-opacity-10 text-warning-emphasis border border-warning border-opacity-25 badge-custom clickable';
+                span.dataset.code = v.voucher_code;
+                span.setAttribute('role','button');
+                span.setAttribute('tabindex','0');
+                span.setAttribute('title','Click to copy voucher code');
+                span.innerHTML = `<i class="fas fa-ticket-alt me-1"></i>${v.name} - ${v.voucher_code} (${v.product}) [${v.status}]`;
+                voucherSection.appendChild(span);
+            });
+        }
+        
+        // Add animation to badges
+        document.querySelectorAll('.badge-custom').forEach((badge, index) => {
+            badge.style.animation = `fadeIn 0.3s ease ${index * 0.05}s forwards`;
+            badge.style.opacity = '0';
+        });
+    } catch (err) {
+        console.error('Error fetching data:', err);
+    }
+}
+
+// Form submission with loading state
+document.getElementById('question-form')?.addEventListener('submit', function(e) {
+    const input = this.querySelector('input[name="question"]');
+    if (input.value.trim() === '') {
+        e.preventDefault();
+        input.classList.add('is-invalid');
+        return;
+    }
+    
+    // Show typing indicator
+    showTypingIndicator();
+    
+    // Auto-scroll to bottom after a short delay to account for DOM updates
+    setTimeout(() => {
+        const chatContainer = document.getElementById('chat-container');
+        if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
+    }, 100);
+});
+
+// Auto-update data every 10 seconds
+setInterval(fetchData, 10000);
+
+// Initial data load
+fetchData();
+
+// Auto-scroll chat to bottom on load
+const chatContainer = document.getElementById('chat-container');
+if (chatContainer) {
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+    
+    // Add smooth scrolling to chat container
+    chatContainer.style.scrollBehavior = 'smooth';
+}
+
+// Apply formatting to existing messages on load
+applyMessageFormatting();
+
+// Add hover effects to cards
+document.querySelectorAll('.card').forEach(card => {
+    card.addEventListener('mouseenter', () => {
+        card.style.transform = 'translateY(-5px)';
+    });
+    
+    card.addEventListener('mouseleave', () => {
+        card.style.transform = 'translateY(0)';
+    });
+});
+
+// Copy-to-clipboard for voucher badges (event delegation for dynamic content)
+const vouchersContainer = document.getElementById('vouchers-section');
+function handleVoucherCopy(badge) {
+    if (!badge) return;
+    const code = badge.dataset.code;
+    if (!code || !navigator.clipboard) return;
+    const previous = badge.innerHTML;
+    navigator.clipboard.writeText(code).then(() => {
+        badge.innerHTML = '<i class="fas fa-check me-1"></i>Copied!';
+        setTimeout(() => { badge.innerHTML = previous; }, 1200);
+    });
+}
+vouchersContainer?.addEventListener('click', (e) => {
+    const badge = e.target.closest('.badge-custom.clickable');
+    if (badge) handleVoucherCopy(badge);
+});
+vouchersContainer?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+        const badge = e.target.closest('.badge-custom.clickable');
+        if (badge) {
+            e.preventDefault();
+            handleVoucherCopy(badge);
+        }
+    }
+});
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
