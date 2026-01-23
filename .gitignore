@@ -15,3 +15,5 @@ __pycache__/
 
 # CPH folder
 .cph/
+
+flask_session/
