@@ -16,7 +16,6 @@
             background: #f4f6f9;
         }
 
-        /* ---------------- HERO ---------------- */
         .hero {
             background: linear-gradient(135deg, #0176d3, #00a1e0);
             color: white;
@@ -32,12 +31,10 @@
 
         .hero p {
             font-size: 1.1rem;
-            opacity: 0.95;
             max-width: 700px;
             margin: auto;
         }
 
-        /* ---------------- SECTIONS ---------------- */
         .section {
             padding: 70px 0;
         }
@@ -48,7 +45,6 @@
             margin-bottom: 3rem;
         }
 
-        /* ---------------- FEATURE CARDS ---------------- */
         .feature-card {
             background: white;
             border-radius: 16px;
@@ -68,19 +64,12 @@
             margin-bottom: 1rem;
         }
 
-        /* ---------------- CTA ---------------- */
         .cta {
             background: #ffffff;
             text-align: center;
             padding: 60px 20px;
         }
 
-        .cta h3 {
-            font-weight: 700;
-            margin-bottom: 1rem;
-        }
-
-        /* ---------------- CHAT ICON ---------------- */
         .chat-toggle {
             position: fixed;
             bottom: 20px;
@@ -99,7 +88,6 @@
             z-index: 1000;
         }
 
-        /* ---------------- CHAT WINDOW ---------------- */
         .chat-window {
             position: fixed;
             bottom: 90px;
@@ -159,7 +147,6 @@
             color: white;
         }
 
-        /* ✅ CLICKABLE LINK STYLE */
         .message.ai .content a {
             color: #0176d3;
             text-decoration: underline;
@@ -170,24 +157,16 @@
             padding: 0.75rem;
             border-top: 1px solid #ddd;
         }
-
-        ul { padding-left: 1.1rem; }
-        li { margin-bottom: 0.2rem; }
     </style>
 </head>
 
 <body>
 
-<!-- ================= HERO ================= -->
 <section class="hero">
     <h1>Salesforce Learning & Growth Agent</h1>
-    <p>
-        Your intelligent assistant for Salesforce learning, certifications,
-        and career growth – all in one place.
-    </p>
+    <p>Your intelligent assistant for Salesforce learning, certifications and career growth.</p>
 </section>
 
-<!-- ================= FEATURES ================= -->
 <section class="section">
     <div class="container">
         <h2 class="section-title">What This Agent Can Do</h2>
@@ -197,7 +176,7 @@
                 <div class="feature-card text-center">
                     <div class="feature-icon"><i class="fas fa-layer-group"></i></div>
                     <h5>Assigned Products</h5>
-                    <p>View Salesforce products assigned to you and understand where to start.</p>
+                    <p>View Salesforce products assigned to you.</p>
                 </div>
             </div>
 
@@ -205,7 +184,7 @@
                 <div class="feature-card text-center">
                     <div class="feature-icon"><i class="fas fa-book"></i></div>
                     <h5>Learning Materials</h5>
-                    <p>Access curated learning paths and Trailhead modules mapped to your role.</p>
+                    <p>Access curated Trailhead modules.</p>
                 </div>
             </div>
 
@@ -213,7 +192,7 @@
                 <div class="feature-card text-center">
                     <div class="feature-icon"><i class="fas fa-certificate"></i></div>
                     <h5>Certification Vouchers</h5>
-                    <p>Track available vouchers and plan your Salesforce certifications smartly.</p>
+                    <p>Track and plan certification vouchers.</p>
                 </div>
             </div>
 
@@ -221,22 +200,19 @@
     </div>
 </section>
 
-<!-- ================= CTA ================= -->
 <section class="cta">
-    <h3>Ready to start your Salesforce journey?</h3>
-    <p>Click the chat icon and ask anything about your learning path.</p>
+    <h3>Ready to start your salesforce journey?</h3>
+    <p>Click the chat icon to begin.</p>
 </section>
 
-<!-- ================= CHAT ICON ================= -->
 <div class="chat-toggle" onclick="toggleChat()">
     <i class="fas fa-comments"></i>
 </div>
 
-<!-- ================= CHAT WINDOW ================= -->
 <div class="chat-window" id="chatWindow">
     <div class="chat-header">
         Salesforce Agent
-        <i class="fas fa-times" style="cursor:pointer" onclick="toggleChat()"></i>
+        <i class="fas fa-times" onclick="toggleChat()" style="cursor:pointer"></i>
     </div>
 
     <div class="chat-container" id="chat-container">
@@ -262,14 +238,12 @@
     </div>
 </div>
 
-<!-- ================= SCRIPTS ================= -->
 <script>
 function toggleChat() {
     const chat = document.getElementById("chatWindow");
     chat.style.display = chat.style.display === "flex" ? "none" : "flex";
 }
 
-/* ✅ AUTO-CONVERT URLS TO CLICKABLE LINKS */
 function linkify(text) {
     const urlRegex = /(https?:\/\/[^\s]+)/g;
     return text.replace(urlRegex, url =>
@@ -277,9 +251,25 @@ function linkify(text) {
     );
 }
 
-document.querySelectorAll('.chat-answer').forEach(el => {
-    el.innerHTML = linkify(el.textContent);
-});
+window.onload = function () {
+
+    // Auto-open chat if history exists
+    {% if chat_history %}
+        const chatWindow = document.getElementById("chatWindow");
+        chatWindow.style.display = "flex";
+    {% endif %}
+
+    // Make links clickable
+    document.querySelectorAll('.chat-answer').forEach(el => {
+        el.innerHTML = linkify(el.textContent);
+    });
+
+    // Auto-scroll to latest message
+    const chatContainer = document.getElementById("chat-container");
+    if (chatContainer) {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+};
 </script>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
