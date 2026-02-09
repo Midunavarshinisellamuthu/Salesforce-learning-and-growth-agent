@@ -236,3 +236,31 @@ Expiry Date: 2026-04-30
 
 Submitted via Salesforce Learning Agent.
 ==============================
+
+==============================
+TO: varshinisellamuthu3004@gmail.com
+FROM: varshinisellamuthu3004@gmail.com
+SUBJECT: Certification Voucher Request
+------------------------------
+Certification Voucher Request
+
+Name: Varshini
+Certification Name: Salesforce Automation
+Expiry Date: 2025-12-31
+
+Submitted via Salesforce Learning Agent.
+==============================
+
+==============================
+TO: varshinisellamuthu3004@gmail.com
+FROM: varshinisellamuthu3004@gmail.com
+SUBJECT: Certification Voucher Request
+------------------------------
+Certification Voucher Request
+
+Name: Miduna
+Certification Name: Salesforce Administrator Certification Voucher
+Expiry Date: 2026-04-30
+
+Submitted via Salesforce Learning Agent.
+==============================
