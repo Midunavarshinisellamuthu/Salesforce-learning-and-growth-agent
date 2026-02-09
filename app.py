@@ -68,6 +68,7 @@ def send_voucher_email(name, certification_name, expiry_date):
     password = os.getenv("EMAIL_PASSWORD")
     receiver = os.getenv("ADMIN_EMAIL", "varshinisellamuthu3004@gmail.com")
     timeout = float(os.getenv("EMAIL_SMTP_TIMEOUT", "20"))
+    provider = os.getenv("EMAIL_PROVIDER", "smtp").lower()
 
     body = f"""Certification Voucher Request
 
@@ -79,25 +80,43 @@ Submitted via Salesforce Learning Agent.
 """
 
     try:
-        if not sender or not password:
-            print("❌ Email credentials missing")
-            return False
-
-        msg = MIMEMultipart()
-        msg["From"] = sender
-        msg["To"] = receiver
-        msg["Subject"] = "Certification Voucher Request"
-
-        msg.attach(MIMEText(body, "plain"))
-
-        server = smtplib.SMTP("smtp.gmail.com", 587, timeout=timeout)
-        server.starttls()
-        server.login(sender, password)
-        server.sendmail(sender, receiver, msg.as_string())
-        server.quit()
-
-        print("✅ Email sent successfully")
-        return "sent"
+        if provider == "sendgrid":
+            api_key = os.getenv("SENDGRID_API_KEY")
+            if not api_key or not sender or not receiver:
+                print("❌ SendGrid credentials missing")
+                raise Exception("missing sendgrid config")
+            try:
+                from sendgrid import SendGridAPIClient
+                from sendgrid.helpers.mail import Mail
+            except Exception as ie:
+                print("❌ SendGrid library not available:", ie)
+                raise
+            message = Mail(
+                from_email=sender,
+                to_emails=receiver,
+                subject="Certification Voucher Request",
+                plain_text_content=body
+            )
+            sg = SendGridAPIClient(api_key)
+            sg.send(message)
+            print("✅ Email sent successfully (SendGrid)")
+            return "sent"
+        else:
+            if not sender or not password:
+                print("❌ Email credentials missing")
+                return False
+            msg = MIMEMultipart()
+            msg["From"] = sender
+            msg["To"] = receiver
+            msg["Subject"] = "Certification Voucher Request"
+            msg.attach(MIMEText(body, "plain"))
+            server = smtplib.SMTP("smtp.gmail.com", 587, timeout=timeout)
+            server.starttls()
+            server.login(sender, password)
+            server.sendmail(sender, receiver, msg.as_string())
+            server.quit()
+            print("✅ Email sent successfully")
+            return "sent"
 
     except Exception as e:
         error_msg = str(e)
