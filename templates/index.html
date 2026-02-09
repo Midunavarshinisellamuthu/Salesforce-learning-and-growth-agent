@@ -16,60 +16,6 @@
             background: #f4f6f9;
         }
 
-        .hero {
-            background: linear-gradient(135deg, #0176d3, #00a1e0);
-            color: white;
-            padding: 90px 20px;
-            text-align: center;
-        }
-
-        .hero h1 {
-            font-weight: 700;
-            font-size: 2.8rem;
-            margin-bottom: 1rem;
-        }
-
-        .hero p {
-            font-size: 1.1rem;
-            max-width: 700px;
-            margin: auto;
-        }
-
-        .section {
-            padding: 70px 0;
-        }
-
-        .section-title {
-            text-align: center;
-            font-weight: 700;
-            margin-bottom: 3rem;
-        }
-
-        .feature-card {
-            background: white;
-            border-radius: 16px;
-            padding: 2rem;
-            height: 100%;
-            box-shadow: 0 8px 25px rgba(0,0,0,0.08);
-            transition: transform 0.3s;
-        }
-
-        .feature-card:hover {
-            transform: translateY(-6px);
-        }
-
-        .feature-icon {
-            font-size: 32px;
-            color: #0176d3;
-            margin-bottom: 1rem;
-        }
-
-        .cta {
-            background: #ffffff;
-            text-align: center;
-            padding: 60px 20px;
-        }
-
         .chat-toggle {
             position: fixed;
             bottom: 20px;
@@ -131,6 +77,8 @@
 
         .message.ai {
             justify-content: flex-start;
+            flex-direction: column;
+            align-items: flex-start;
         }
 
         .content {
@@ -147,10 +95,22 @@
             color: white;
         }
 
-        .message.ai .content a {
-            color: #0176d3;
-            text-decoration: underline;
-            word-break: break-all;
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+
+        .action-btn {
+            background: #0176d3;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 14px;
         }
 
         .chat-input {
@@ -161,49 +121,6 @@
 </head>
 
 <body>
-
-<section class="hero">
-    <h1>Salesforce Learning & Growth Agent</h1>
-    <p>Your intelligent assistant for Salesforce learning, certifications and career growth.</p>
-</section>
-
-<section class="section">
-    <div class="container">
-        <h2 class="section-title">What This Agent Can Do</h2>
-        <div class="row g-4">
-
-            <div class="col-md-4">
-                <div class="feature-card text-center">
-                    <div class="feature-icon"><i class="fas fa-layer-group"></i></div>
-                    <h5>Assigned Products</h5>
-                    <p>View Salesforce products assigned to you.</p>
-                </div>
-            </div>
-
-            <div class="col-md-4">
-                <div class="feature-card text-center">
-                    <div class="feature-icon"><i class="fas fa-book"></i></div>
-                    <h5>Learning Materials</h5>
-                    <p>Access curated Trailhead modules.</p>
-                </div>
-            </div>
-
-            <div class="col-md-4">
-                <div class="feature-card text-center">
-                    <div class="feature-icon"><i class="fas fa-certificate"></i></div>
-                    <h5>Certification Vouchers</h5>
-                    <p>Track and plan certification vouchers.</p>
-                </div>
-            </div>
-
-        </div>
-    </div>
-</section>
-
-<section class="cta">
-    <h3>Ready to start your salesforce journey?</h3>
-    <p>Click the chat icon to begin.</p>
-</section>
 
 <div class="chat-toggle" onclick="toggleChat()">
     <i class="fas fa-comments"></i>
@@ -220,8 +137,42 @@
         <div class="message user">
             <div class="content">{{ chat.question }}</div>
         </div>
+
         <div class="message ai">
-            <div class="content chat-answer">{{ chat.answer }}</div>
+            <div class="content chat-answer">{{ chat.answer | safe }}</div>
+
+            {% if "HOW CAN I ASSIST YOU?" in chat.answer %}
+            <div class="action-buttons">
+                <button class="action-btn" onclick="sendAction('products')">Products</button>
+                <button class="action-btn" onclick="sendAction('learning')">Learning</button>
+                <button class="action-btn" onclick="sendAction('certifications')">Certifications</button>
+                <button class="action-btn" onclick="sendAction('voucher_form')">Voucher Form</button>
+            </div>
+
+            {% elif "VOUCHER_FORM" in chat.answer %}
+            <form method="post" style="margin-top: 10px;" onsubmit="return validateForm(this)">
+                <div class="mb-2">
+                    <label>Name</label>
+                    <input type="text" class="form-control" name="name" required>
+                </div>
+                <div class="mb-2">
+                    <label>Certification Name</label>
+                    <input type="text" class="form-control" name="certification_name" required>
+                </div>
+                <button type="submit" class="btn btn-primary btn-sm">Submit</button>
+            </form>
+            <script>
+            function validateForm(form) {
+                const submitBtn = form.querySelector('button[type="submit"]');
+                if (submitBtn.disabled) {
+                    return false;
+                }
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Submitting...';
+                return true;
+            }
+            </script>
+            {% endif %}
         </div>
         {% endfor %}
     </div>
@@ -244,31 +195,32 @@ function toggleChat() {
     chat.style.display = chat.style.display === "flex" ? "none" : "flex";
 }
 
-function linkify(text) {
-    const urlRegex = /(https?:\/\/[^\s]+)/g;
-    return text.replace(urlRegex, url =>
-        `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`
-    );
+function sendAction(action) {
+    const input = document.querySelector('input[name="question"]');
+    const form = document.querySelector('.chat-input form'); // ✅ FIXED
+
+    if (!input || !form) return;
+
+    if (action === 'products') {
+        input.value = 'Show me my assigned products';
+    } else if (action === 'learning') {
+        input.value = 'Show me learning materials';
+    } else if (action === 'certifications') {
+        input.value = 'Show me certification vouchers';
+    } else if (action === 'voucher_form') {
+        input.value = 'I need certification voucher details form';
+    }
+
+    form.submit();
 }
 
 window.onload = function () {
-
-    // Auto-open chat if history exists
     {% if chat_history %}
-        const chatWindow = document.getElementById("chatWindow");
-        chatWindow.style.display = "flex";
+    document.getElementById("chatWindow").style.display = "flex";
     {% endif %}
 
-    // Make links clickable
-    document.querySelectorAll('.chat-answer').forEach(el => {
-        el.innerHTML = linkify(el.textContent);
-    });
-
-    // Auto-scroll to latest message
     const chatContainer = document.getElementById("chat-container");
-    if (chatContainer) {
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-    }
+    chatContainer.scrollTop = chatContainer.scrollHeight;
 };
 </script>
 
