@@ -7,11 +7,14 @@ from flask import Flask, render_template, request, session, redirect
 from flask_session import Session
 from groq import Groq
 from dotenv import load_dotenv
+import difflib
 from salesforce_api import (
     get_employee_products,
     get_learning_materials,
     get_certification_vouchers,
-    USER_ID
+    USER_ID,
+    # find_product_description,
+    save_chat_history
 )
 
 # -----------------------------------
@@ -28,7 +31,15 @@ app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "supersecretkey")
 app.config["SESSION_TYPE"] = "filesystem"
 app.config["SESSION_PERMANENT"] = False
 app.config["SESSION_USE_SIGNER"] = True
-app.config["SESSION_FILE_DIR"] = "./flask_session"
+app.config["SESSION_FILE_DIR"] = os.getenv("SESSION_FILE_DIR", "./flask_session")
+app.config["SESSION_COOKIE_NAME"] = os.getenv("SESSION_COOKIE_NAME", "learning_agent_session")
+app.config["SESSION_COOKIE_SAMESITE"] = os.getenv("SESSION_COOKIE_SAMESITE", "None")
+app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE", "True").lower() == "true"
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+try:
+    os.makedirs(app.config["SESSION_FILE_DIR"], exist_ok=True)
+except Exception:
+    pass
 
 Session(app)
 
@@ -36,6 +47,17 @@ Session(app)
 # Groq Client
 # -----------------------------------
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+PRODUCT_DESCRIPTIONS = {}
+
+PRODUCT_ALIASES = {
+    "salesforce administrator": "salesforce admin",
+    "administrator": "salesforce admin",
+    "flow and automation": "flow & automation",
+    "flow automation": "flow & automation",
+    "salesforce automation": "flow & automation",
+    "salesforce flow automation": "flow & automation"
+}
 
 # -----------------------------------
 # Helper Functions
@@ -45,9 +67,9 @@ def is_greeting(text):
 
 def detect_intent(question):
     q = question.lower()
-    if "voucher" in q or "certification" in q:
+    if "voucher" in q or "certification" in q or "exam" in q:
         return "voucher"
-    if "learning" in q or "material" in q:
+    if "learning" in q or "material" in q or "course" in q or "training" in q or "trailhead" in q:
         return "learning"
     if "product" in q:
         return "product"
@@ -59,6 +81,68 @@ def normalize_response(text):
     text = re.sub(r"\*\*(.*?)\*\*", r"\1", text)
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     return "\n".join(lines)
+
+def match_items(items, name_fn, keywords):
+    names = [name_fn(i).lower() for i in items]
+    sub = []
+    for i, n in enumerate(names):
+        if any(k in n for k in keywords):
+            sub.append(items[i])
+    if sub:
+        return sub
+    phrase = " ".join(keywords).strip()
+    if phrase:
+        matches = difflib.get_close_matches(phrase, names, n=3, cutoff=0.6)
+        if matches:
+            picked = []
+            setm = set(matches)
+            for i, n in enumerate(names):
+                if n in setm:
+                    picked.append(items[i])
+            return picked
+    return []
+
+def normalize_product_name(name):
+    s = name.lower().strip()
+    s = s.replace(" and ", " & ")
+    return PRODUCT_ALIASES.get(s, s)
+
+def get_product_description(product_name, learning):
+
+    product_name = product_name.strip().lower()
+
+    for record in learning:
+        product_field = record.get("Product_Name__c")
+
+        if product_field:
+            db_product = product_field.strip().lower()
+
+            # Exact match OR contains match
+            if product_name == db_product or product_name in db_product:
+                description = record.get("Description__c")
+                if description:
+                    return description
+
+    return "No description available for this product."
+
+
+
+def find_best_product(products, query):
+    q = normalize_product_name(re.sub(r"[^a-z0-9 &]+", " ", query.lower()).strip())
+    norm_map = {normalize_product_name(p): p for p in products}
+    if q in norm_map:
+        return norm_map[q]
+    names = list(norm_map.keys())
+    close = difflib.get_close_matches(q, names, n=1, cutoff=0.7)
+    if close:
+        return norm_map[close[0]]
+    words = [w for w in re.findall(r"[a-z0-9]+", q) if len(w) > 2]
+    candidates = match_items(products, lambda p: p, words) if words else []
+    if candidates:
+        scores = [(p, difflib.SequenceMatcher(None, q, normalize_product_name(p)).ratio()) for p in candidates]
+        scores.sort(key=lambda x: x[1], reverse=True)
+        return scores[0][0]
+    return None
 
 # -----------------------------------
 # Email Sender
@@ -147,133 +231,178 @@ Submitted via Salesforce Learning Agent.
 # -----------------------------------
 # AI Response Generator
 # -----------------------------------
+# -----------------------------------
+# AI Response Generator
+# -----------------------------------
 def groq_answer(question, chat_history, products, learning, vouchers):
 
     if is_greeting(question):
         return "HOW CAN I ASSIST YOU?"
 
-    # Check if the previous message was asking for skill level
+    # -----------------------------------
+    # SKILL LEVEL FOLLOW-UP HANDLING
+    # -----------------------------------
     if chat_history:
         last_bot_message = chat_history[-1].get("answer", "")
         if "What is your skill level?" in last_bot_message:
             skill_levels = ["beginner", "intermediate", "advanced"]
             user_skill = next((s for s in skill_levels if s in question.lower()), None)
-            
+
             if user_skill:
-                filtered_learning = [m for m in learning if m.get('skill_level', '').lower() == user_skill]
+                filtered_learning = [
+                    m for m in learning
+                    if m.get('skill_level', '').lower() == user_skill
+                ]
+
                 if not filtered_learning:
                     return f"No {user_skill.capitalize()} learning materials found."
-                
-                learning_list = "\n".join([f"- <a href='{m['link']}' target='_blank'>{m['material']}</a> ({m['skill_level']})" for m in filtered_learning])
+
+                learning_list = "\n".join([
+                    f"- <a href='{m['link']}' target='_blank'>{m['material']}</a> ({m['skill_level']})"
+                    for m in filtered_learning
+                ])
+
                 return f"Here are the {user_skill.capitalize()} learning materials:\n\n{learning_list}"
-            else:
-                 # If user replied something else, maybe we should fall through or repeat the question?
-                 # Let's assume if they didn't provide a valid skill, we treat it as a new intent or general question.
-                 pass
 
     intent = detect_intent(question)
 
-    if intent == "voucher" and any(k in question.lower() for k in ["apply", "request", "form", "submit"]):
-        return "VOUCHER_FORM"
-
+    # ==========================================
+    # 🔥 UPDATED VOUCHER SECTION (FIXED)
+    # ==========================================
     if intent == "voucher":
+
+        # Voucher form trigger
+        if any(k in question.lower() for k in ["apply", "request", "form", "submit"]):
+            return "VOUCHER_FORM"
+
         if not vouchers:
             return "You have no available certification vouchers."
+
         q = question.lower()
+
+        # ✅ DIRECTLY SHOW ALL VOUCHERS
+        if any(word in q for word in ["all", "available", "list", "show all", "everything"]):
+            voucher_list = "\n".join([
+                f"- {v['name']} (Status: {v.get('status','N/A')}, Exp: {v.get('expiry_date','N/A')})"
+                for v in vouchers
+            ])
+            return f"Here are your available certification vouchers:\n\n{voucher_list}"
+
+        # 🔍 Specific voucher search
         words = re.findall(r"[a-z0-9]+", q)
-        stop = {"voucher","certification","apply","request","form","submit","use","available","list","show","for","details","info","describe","description","about"}
-        if "product" in q:
-            voucher_list = "\n".join([f"- {v['name']} (Exp: {v.get('expiry_date', 'N/A')})" for v in vouchers])
-            return f"Certification vouchers are not product-specific.\n\nAvailable vouchers:\n\n{voucher_list}\n\nPlease specify the certification name."
+        stop = {
+            "voucher","certification","apply","request","form","submit",
+            "use","available","list","show","for","details","info",
+            "describe","description","about","exam"
+        }
+
         keywords = [w for w in words if len(w) > 3 and w not in stop]
-        filtered = [v for v in vouchers if any(k in v["name"].lower() for k in keywords)] if keywords else []
+
+        filtered = match_items(vouchers, lambda v: v["name"], keywords) if keywords else []
+
         if filtered:
             if len(filtered) == 1:
                 v = filtered[0]
-                name = v["name"]
-                status = v.get("status", "N/A")
-                expiry = v.get("expiry_date", "N/A")
-                return f"{name}\nStatus: {status}\nExpiry: {expiry}"
-            voucher_list = "\n".join([f"- {v['name']} (Exp: {v.get('expiry_date', 'N/A')})" for v in filtered])
+                return (
+                    f"{v['name']} — Voucher status: {v.get('status','N/A')}."
+                    f" Expires: {v.get('expiry_date','N/A')}."
+                )
+
+            voucher_list = "\n".join([
+                f"- {v['name']} (Exp: {v.get('expiry_date','N/A')})"
+                for v in filtered
+            ])
+
             return f"Matching certification vouchers:\n\n{voucher_list}\n\nPlease specify one."
+
+        # If user just says "show certification vouchers"
+        if "voucher" in q or "certification" in q:
+            voucher_list = "\n".join([
+                f"- {v['name']} (Exp: {v.get('expiry_date','N/A')})"
+                for v in vouchers
+            ])
+            return f"Here are your available certification vouchers:\n\n{voucher_list}"
+
         return "Which certification voucher are you looking for?"
 
+    # ==========================================
+    # LEARNING SECTION (UNCHANGED)
+    # ==========================================
     if intent == "learning":
+
         if not learning:
             return "No learning materials found for your assigned products."
-        
-        # Check if the user has already provided a skill level in the current message
+
         skill_levels = ["beginner", "intermediate", "advanced"]
         user_skill = next((s for s in skill_levels if s in question.lower()), None)
-        
-        q = question.lower()
-        desc_markers = ["describe","description","details","detail","info","information","what is","what are","tell me about"]
-        if any(m in q for m in desc_markers):
-            words = re.findall(r"[a-z0-9]+", q)
-            stop = {"learning","material","materials","describe","description","details","detail","info","information","about","tell","show","give","for","the","my"}
-            keywords = [w for w in words if len(w) > 2 and w not in stop]
-            filtered = [m for m in learning if any(k in m["material"].lower() for k in keywords)] if keywords else []
-            if filtered:
-                if len(filtered) == 1:
-                    m = filtered[0]
-                    mat = m.get("material", "N/A")
-                    mtype = m.get("material_type", "N/A")
-                    skill = m.get("skill_level", "N/A")
-                    link = m.get("link") or "N/A"
-                    return f"{mat}\nType: {mtype}\nSkill: {skill}\nLink: {link}"
-                learning_list = "\n".join([f"- {m['material']}" for m in filtered])
-                return f"Matching learning materials:\n\n{learning_list}\n\nPlease specify one."
-            return "Which learning material are you asking about?"
-        
-        # If no skill level provided, check if we asked for it in the last message
-        if not user_skill and chat_history:
-            last_bot_message = chat_history[-1].get("answer", "")
-            if "What is your skill level?" in last_bot_message:
-                 # The user's current message (question) might be the skill level answer (e.g., "Beginner")
-                 # We already checked question.lower() for skill levels above, but maybe they just typed "Beginner" without "learning" keyword?
-                 # Actually, if intent is "learning", it detected "learning" or "material" in the question.
-                 # If the user just replied "Beginner", intent might be "general" (default).
-                 pass
-        
+
         if user_skill:
-             filtered_learning = [m for m in learning if m.get('skill_level', '').lower() == user_skill]
-             if not filtered_learning:
-                 return f"No {user_skill.capitalize()} learning materials found."
-             
-             learning_list = "\n".join([f"- <a href='{m['link']}' target='_blank'>{m['material']}</a> ({m['skill_level']})" for m in filtered_learning])
-             return f"Here are the {user_skill.capitalize()} learning materials:\n\n{learning_list}"
+            filtered_learning = [
+                m for m in learning
+                if m.get('skill_level', '').lower() == user_skill
+            ]
+
+            if not filtered_learning:
+                return f"No {user_skill.capitalize()} learning materials found."
+
+            learning_list = "\n".join([
+                f"- <a href='{m['link']}' target='_blank'>{m['material']}</a> ({m['skill_level']})"
+                for m in filtered_learning
+            ])
+
+            return f"Here are the {user_skill.capitalize()} learning materials:\n\n{learning_list}"
 
         return "What is your skill level? (Beginner / Intermediate / Advanced)"
 
+        # ==========================================
+    # 🔥 UPDATED PRODUCT SECTION
+    # ==========================================
     if intent == "product":
+
         if not products:
             return "You have no assigned products."
-        
+
         q = question.lower()
-        desc_markers = ["describe","description","details","detail","info","information","what is","what are","tell me about"]
-        if any(m in q for m in desc_markers):
+
+        desc_markers = [
+            "describe", "description", "details",
+            "tell me about", "what is", "explain",
+            "overview", "info"
+        ]
+
+        # -----------------------------
+        # If asking for description
+        # -----------------------------
+        if any(marker in q for marker in desc_markers):
+
             words = re.findall(r"[a-z0-9]+", q)
-            stop = {"product","products","describe","description","details","detail","info","information","about","tell","show","give","for","the","my","assigned"}
-            keywords = [w for w in words if len(w) > 2 and w not in stop]
-            filtered = [p for p in products if any(k in p.lower() for k in keywords)] if keywords else []
-            if filtered:
-                if len(filtered) == 1:
-                    p = filtered[0]
-                    prompt = f"Provide a concise 2-3 sentence description of the product '{p}'. If you are not certain, say 'No specific description available.' Only plain text."
-                    response = client.chat.completions.create(
-                        model="llama-3.1-8b-instant",
-                        messages=[{"role": "user", "content": prompt}],
-                        temperature=0.2,
-                        max_tokens=120
-                    )
-                    return normalize_response(response.choices[0].message.content)
-                product_list = "\n".join([f"- {pi}" for pi in filtered])
-                return f"Matching products:\n\n{product_list}\n\nPlease specify one."
+
+            stop = {
+                "product", "products", "describe", "description",
+                "details", "tell", "about", "what", "is",
+                "the", "give", "me", "info", "overview", "explain"
+            }
+
+            keywords = [w for w in words if w not in stop and len(w) > 2]
+
+            best_product = find_best_product(products, " ".join(keywords))
+
+            if best_product:
+                description = get_product_description(best_product, learning)
+                return f"📌 {best_product}\n\n{description}"
+
             return "Which product are you asking about?"
-        
+
+        # -----------------------------
+        # Otherwise list products
+        # -----------------------------
         product_list = "\n".join([f"- {p}" for p in products])
         return f"Here are your assigned products:\n\n{product_list}"
 
+        
+    # ==========================================
+    # FALLBACK TO GROQ
+    # ==========================================
     prompt = f"""
 Context:
 Products: {', '.join(products) if products else 'None'}
@@ -359,6 +488,11 @@ def index():
                 "answer": response
             })
 
+            try:
+                save_chat_history(USER_ID, formatted_request, response)
+            except Exception:
+                pass
+
             # Continue to normal flow to show the response
 
         # -------------------------------
@@ -368,6 +502,10 @@ def index():
         if question:
             answer = groq_answer(question, session["chat_history"], products, learning, vouchers)
             session["chat_history"].append({"question": question, "answer": answer})
+            try:
+                save_chat_history(USER_ID, question, answer)
+            except Exception:
+                pass
 
     return render_template(
         "index.html",
