@@ -145,34 +145,40 @@
             <div class="action-buttons">
                 <button class="action-btn" onclick="sendAction('products')">Products</button>
                 <button class="action-btn" onclick="sendAction('learning')">Learning</button>
-                <button class="action-btn" onclick="sendAction('certifications')">Certifications</button>
+                <button class="action-btn" onclick="sendAction('certifications')">Certifications guidelines</button>
                 <button class="action-btn" onclick="sendAction('voucher_form')">Voucher Form</button>
             </div>
 
             {% elif "VOUCHER_FORM" in chat.answer %}
-            <form method="post" style="margin-top: 10px;" onsubmit="return validateForm(this)">
-                <div class="mb-2">
-                    <label>Name</label>
-                    <input type="text" class="form-control" name="name" required>
-                </div>
-                <div class="mb-2">
-                    <label>Certification Name</label>
-                    <input type="text" class="form-control" name="certification_name" required>
-                </div>
-                <button type="submit" class="btn btn-primary btn-sm">Submit</button>
-            </form>
-            <script>
-            function validateForm(form) {
-                const submitBtn = form.querySelector('button[type="submit"]');
-                if (submitBtn.disabled) {
-                    return false;
-                }
-                submitBtn.disabled = true;
-                submitBtn.textContent = 'Submitting...';
-                return true;
-            }
-            </script>
-            {% endif %}
+<form method="post" style="margin-top: 10px;" onsubmit="return validateForm(this)">
+    <div class="mb-2">
+        <label>Name</label>
+        <input type="text" class="form-control" name="name" required>
+    </div>
+    <div class="mb-2">
+        <label>Certification Name</label>
+        <input type="text" class="form-control" name="certification_name" required>
+    </div>
+    <!-- ✅ Added Duration Field -->
+    <div class="mb-2">
+        <label>Duration</label>
+        <input type="text" class="form-control" name="duration" placeholder="e.g., 3 months / 2 weeks / 10 days" required>
+    </div>
+    <button type="submit" class="btn btn-primary btn-sm">Submit</button>
+</form>
+<script>
+function validateForm(form) {
+    const submitBtn = form.querySelector('button[type="submit"]');
+    if (submitBtn.disabled) {
+        return false;
+    }
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Submitting...';
+    return true;
+}
+</script>
+{% endif %}
+
         </div>
         {% endfor %}
     </div>
@@ -206,7 +212,7 @@ function sendAction(action) {
     } else if (action === 'learning') {
         input.value = 'Show me learning materials';
     } else if (action === 'certifications') {
-        input.value = 'Show me certification vouchers';
+        input.value = 'Certification guidelines';
     } else if (action === 'voucher_form') {
         input.value = 'I need certification voucher details form';
     }

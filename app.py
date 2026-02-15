@@ -8,12 +8,12 @@ from flask_session import Session
 from groq import Groq
 from dotenv import load_dotenv
 import difflib
+
 from salesforce_api import (
     get_employee_products,
     get_learning_materials,
     get_certification_vouchers,
     USER_ID,
-    # find_product_description,
     save_chat_history
 )
 
@@ -58,12 +58,37 @@ PRODUCT_ALIASES = {
     "salesforce automation": "flow & automation",
     "salesforce flow automation": "flow & automation"
 }
+# -----------------------------------
+# Certification Guidelines (Static Text)
+# -----------------------------------
+CERTIFICATION_GUIDELINES = """<b>GUIDELINES FOR CERTIFICATION VOUCHERS</b><br>
+1️⃣ <b>Check Your Available Vouchers First</b>
+Use the chatbot to view only the vouchers assigned to you.<br>
+2️⃣ <b>Verify the Expiry Date</b>
+Always check the voucher expiry before planning your exam.<br>
+3️⃣ <b>Use the Voucher Only for Assigned Certifications</b>
+Apply the voucher only for the certification mentioned in your voucher list.<br>
+4️⃣ <b>Do Not Share Your Voucher Code</b>
+Voucher codes are personal and linked to your user account.<br>
+5️⃣ <b>Request Voucher Through the Chatbot Only</b>
+Always use the chatbot form to request vouchers (no manual requests).<br>
+6️⃣ <b>Apply the Voucher Before It Expires</b>
+Expired vouchers cannot be reactivated.<br>
+7️⃣ <b>Use Each Voucher Only Once</b>
+After using a voucher, it cannot be reused.<br>
+8️⃣ <b>Provide Correct Certification Name in Form</b>
+Enter the exact certification name shown in the chatbot.<br>
+9️⃣ <b>Track Your Request Status</b>
+After submission, check whether your voucher request is approved/processed.<br>
+🔟 <b>Contact Admin Only If Voucher Is Missing or Expired</b>
+Raise issues only when vouchers are not visible or already expired."""
+
 
 # -----------------------------------
 # Helper Functions
 # -----------------------------------
 def is_greeting(text):
-    return text.lower().strip() in ["hi", "hello", "hey", "good morning", "good evening"]
+    return text.lower().strip() in ["hi", "hello", "hey", "good morning", "good evening","good afternoon"]
 
 def detect_intent(question):
     q = question.lower()
@@ -107,25 +132,30 @@ def normalize_product_name(name):
     s = s.replace(" and ", " & ")
     return PRODUCT_ALIASES.get(s, s)
 
+# ✅ FIX: Normalize learning data (handles Salesforce __c fields)
+def normalize_learning(learning):
+    normalized = []
+    for m in learning:
+        normalized.append({
+            "material": m.get("Material_Name__c", m.get("material", "")),
+            "product": m.get("Product_Name__c", m.get("product", "")),
+            "skill_level": m.get("Skill_Level__c", m.get("skill_level", "")),
+            "material_type": m.get("Material_Type__c", m.get("material_type", "")),
+            "link": m.get("Link__c", m.get("link", ""))
+        })
+    return normalized
+
 def get_product_description(product_name, learning):
-
     product_name = product_name.strip().lower()
-
     for record in learning:
-        product_field = record.get("Product_Name__c")
-
+        product_field = record.get("Product_Name__c") or record.get("product")
         if product_field:
             db_product = product_field.strip().lower()
-
-            # Exact match OR contains match
             if product_name == db_product or product_name in db_product:
-                description = record.get("Description__c")
+                description = record.get("Description__c") or record.get("description")
                 if description:
                     return description
-
     return "No description available for this product."
-
-
 
 def find_best_product(products, query):
     q = normalize_product_name(re.sub(r"[^a-z0-9 &]+", " ", query.lower()).strip())
@@ -147,7 +177,7 @@ def find_best_product(products, query):
 # -----------------------------------
 # Email Sender
 # -----------------------------------
-def send_voucher_email(name, certification_name, expiry_date):
+def send_voucher_email(name, certification_name, duration, expiry_date):
     sender = os.getenv("EMAIL_SENDER")
     password = os.getenv("EMAIL_PASSWORD")
     receiver = os.getenv("ADMIN_EMAIL", "varshinisellamuthu3004@gmail.com")
@@ -158,6 +188,7 @@ def send_voucher_email(name, certification_name, expiry_date):
 
 Name: {name}
 Certification Name: {certification_name}
+Duration: {duration}
 Expiry Date: {expiry_date}
 
 Submitted via Salesforce Learning Agent.
@@ -165,16 +196,9 @@ Submitted via Salesforce Learning Agent.
 
     try:
         if provider == "sendgrid":
+            from sendgrid import SendGridAPIClient
+            from sendgrid.helpers.mail import Mail
             api_key = os.getenv("SENDGRID_API_KEY")
-            if not api_key or not sender or not receiver:
-                print("❌ SendGrid credentials missing")
-                raise Exception("missing sendgrid config")
-            try:
-                from sendgrid import SendGridAPIClient
-                from sendgrid.helpers.mail import Mail
-            except Exception as ie:
-                print("❌ SendGrid library not available:", ie)
-                raise
             message = Mail(
                 from_email=sender,
                 to_emails=receiver,
@@ -201,36 +225,20 @@ Submitted via Salesforce Learning Agent.
             server.quit()
             print("✅ Email sent successfully")
             return "sent"
-
     except Exception as e:
-        error_msg = str(e)
-        if "10060" in error_msg or "timed out" in error_msg.lower():
-            print("⚠️ Network blocked email connection (Timeout). Switching to OFFLINE MODE.")
-        else:
-            print(f"❌ Email error: {error_msg}")
-            print("⚠️ Switching to OFFLINE MODE.")
-        
-        # Fallback: Save email to a local file for verification
+        print(f"❌ Email error: {e}")
         try:
             log_file = "email_logs.txt"
             with open(log_file, "a", encoding="utf-8") as f:
-                f.write(f"\n{'='*30}\n")
-                f.write(f"TO: {receiver}\n")
-                f.write(f"FROM: {sender}\n")
-                f.write(f"SUBJECT: Certification Voucher Request\n")
-                f.write(f"{'-'*30}\n")
+                f.write(f"\n{'='*30}\nTO: {receiver}\nFROM: {sender}\nSUBJECT: Certification Voucher Request\n")
                 f.write(body)
-                f.write(f"{'='*30}\n")
-            
+                f.write(f"\n{'='*30}\n")
             print(f"✅ Email saved locally to {log_file} (Simulation Mode)")
-            return "saved"  # Return "saved" so the UI shows success
+            return "saved"
         except Exception as log_error:
             print(f"❌ Failed to save email log: {log_error}")
             return False
 
-# -----------------------------------
-# AI Response Generator
-# -----------------------------------
 # -----------------------------------
 # AI Response Generator
 # -----------------------------------
@@ -239,84 +247,66 @@ def groq_answer(question, chat_history, products, learning, vouchers):
     if is_greeting(question):
         return "HOW CAN I ASSIST YOU?"
 
-    # -----------------------------------
-    # SKILL LEVEL FOLLOW-UP HANDLING
-    # -----------------------------------
-    if chat_history:
-        last_bot_message = chat_history[-1].get("answer", "")
-        if "What is your skill level?" in last_bot_message:
-            skill_levels = ["beginner", "intermediate", "advanced"]
-            user_skill = next((s for s in skill_levels if s in question.lower()), None)
+    # ✅ FIX: Remember context from previous learning prompt
+    if chat_history and "What is your skill level?" in chat_history[-1].get("answer", ""):
+        intent = "learning"
+    else:
+        intent = detect_intent(question)
 
-            if user_skill:
-                filtered_learning = [
-                    m for m in learning
-                    if m.get('skill_level', '').lower() == user_skill
-                ]
-
-                if not filtered_learning:
-                    return f"No {user_skill.capitalize()} learning materials found."
-
-                learning_list = "\n".join([
-                    f"- <a href='{m['link']}' target='_blank'>{m['material']}</a> ({m['skill_level']})"
-                    for m in filtered_learning
-                ])
-
-                return f"Here are the {user_skill.capitalize()} learning materials:\n\n{learning_list}"
-
-    intent = detect_intent(question)
-
-    # ==========================================
-    # 🔥 UPDATED VOUCHER SECTION (FIXED)
+             # ==========================================
+    # VOUCHER SECTION (FINAL — SHOWS ONLY GUIDELINES WHEN "CERTIFICATIONS" CLICKED)
     # ==========================================
     if intent == "voucher":
 
-        # Voucher form trigger
-        if any(k in question.lower() for k in ["apply", "request", "form", "submit"]):
+        q_lower = question.strip().lower()
+
+        # ✅ If user clicked or typed "certification" or "certifications"
+        #    and did NOT ask about vouchers, forms, or requests → show only guidelines
+        if (
+            ("certification" in q_lower or "certifications" in q_lower)
+            and not any(word in q_lower for word in ["voucher", "apply", "request", "form", "submit", "list", "available", "show"])
+        ):
+            return CERTIFICATION_GUIDELINES
+
+        # 🔽 Otherwise, continue with normal voucher logic
+        if any(k in q_lower for k in ["apply", "request", "form", "submit"]):
             return "VOUCHER_FORM"
 
         if not vouchers:
             return "You have no available certification vouchers."
 
-        q = question.lower()
-
-        # ✅ DIRECTLY SHOW ALL VOUCHERS
-        if any(word in q for word in ["all", "available", "list", "show all", "everything"]):
+        if any(word in q_lower for word in ["all", "available", "list", "show all", "everything"]):
             voucher_list = "\n".join([
                 f"- {v['name']} (Status: {v.get('status','N/A')}, Exp: {v.get('expiry_date','N/A')})"
                 for v in vouchers
             ])
             return f"Here are your available certification vouchers:\n\n{voucher_list}"
 
-        # 🔍 Specific voucher search
-        words = re.findall(r"[a-z0-9]+", q)
+        words = re.findall(r"[a-z0-9]+", q_lower)
         stop = {
-            "voucher","certification","apply","request","form","submit",
-            "use","available","list","show","for","details","info",
-            "describe","description","about","exam"
+            "voucher", "certification", "apply", "request", "form", "submit",
+            "use", "available", "list", "show", "for", "details", "info",
+            "describe", "description", "about", "exam"
         }
 
         keywords = [w for w in words if len(w) > 3 and w not in stop]
-
         filtered = match_items(vouchers, lambda v: v["name"], keywords) if keywords else []
 
         if filtered:
             if len(filtered) == 1:
                 v = filtered[0]
                 return (
-                    f"{v['name']} — Voucher status: {v.get('status','N/A')}."
-                    f" Expires: {v.get('expiry_date','N/A')}."
+                    f"{v['name']} — Voucher status: {v.get('status','N/A')}. "
+                    f"Expires: {v.get('expiry_date','N/A')}."
                 )
 
             voucher_list = "\n".join([
                 f"- {v['name']} (Exp: {v.get('expiry_date','N/A')})"
                 for v in filtered
             ])
-
             return f"Matching certification vouchers:\n\n{voucher_list}\n\nPlease specify one."
 
-        # If user just says "show certification vouchers"
-        if "voucher" in q or "certification" in q:
+        if "voucher" in q_lower or "certification" in q_lower:
             voucher_list = "\n".join([
                 f"- {v['name']} (Exp: {v.get('expiry_date','N/A')})"
                 for v in vouchers
@@ -325,81 +315,142 @@ def groq_answer(question, chat_history, products, learning, vouchers):
 
         return "Which certification voucher are you looking for?"
 
-    # ==========================================
-    # LEARNING SECTION (UNCHANGED)
-    # ==========================================
-    if intent == "learning":
 
+
+
+   # ==========================================
+# LEARNING SECTION (FINAL FIXED VERSION)
+# ==========================================
+    if intent == "learning":
         if not learning:
             return "No learning materials found for your assigned products."
 
         skill_levels = ["beginner", "intermediate", "advanced"]
         user_skill = next((s for s in skill_levels if s in question.lower()), None)
 
-        if user_skill:
-            filtered_learning = [
-                m for m in learning
-                if m.get('skill_level', '').lower() == user_skill
+        words = re.findall(r"[a-z0-9]+", question.lower())
+
+        stop_words = {
+            "learning", "material", "materials", "course", "courses",
+            "training", "show", "me", "give", "about", "on", "for", "in",
+            "along", "which", "level", "beginner", "intermediate", "advanced"
+        }
+
+        keywords = [w for w in words if w not in stop_words and len(w) > 2]
+        query = " ".join(keywords).strip()
+
+        # Ask for skill level if not provided
+        if not user_skill:
+            return (
+                "What is your skill level? (Beginner / Intermediate / Advanced)\n"
+                "Along which learning material do you want?"
+            )
+
+        matched_by_name = []
+        if query:
+            for m in learning:
+                material_name = m.get("material", "").lower()
+                if all(word in material_name for word in keywords):
+                    matched_by_name.append(m)
+
+            # ✅ Fuzzy matching fallback
+            if not matched_by_name and query:
+                matches = difflib.get_close_matches(
+                    query, [m.get("material", "").lower() for m in learning],
+                    n=1, cutoff=0.6
+                )
+                if matches:
+                    matched_by_name = [
+                        m for m in learning
+                        if m.get("material", "").lower() == matches[0]
+                    ]
+
+            # ❌ No matching material found at all
+            if not matched_by_name:
+                return f"No learning materials found for '{query}'."
+
+            # 🎯 Exact skill match check
+            exact_skill_match = [
+                m for m in matched_by_name
+                if m.get("skill_level", "").lower() == user_skill
             ]
 
-            if not filtered_learning:
-                return f"No {user_skill.capitalize()} learning materials found."
+            # ✅ If available in the requested skill level → show info
+            if exact_skill_match:
+                m = exact_skill_match[0]
+                return (
+                    f"📘 <b>{m['material']}</b><br><br>"
+                    f"<b>Product:</b> {m.get('product')}<br>"
+                    f"<b>Skill Level:</b> {m.get('skill_level')}<br>"
+                    f"<b>Type:</b> {m.get('material_type')}<br>"
+                    f"<b>Link:</b> "
+                    f"<a href='{m.get('link')}' target='_blank' "
+                    f"style='color:#007bff;text-decoration:none;'>Open Resource</a>"
+                )
 
-            learning_list = "\n".join([
-                f"- <a href='{m['link']}' target='_blank'>{m['material']}</a> ({m['skill_level']})"
-                for m in filtered_learning
-            ])
+            # 🚫 Requested skill level not available — don't give description
+            available_skills = sorted({
+                m.get("skill_level", "").capitalize()
+                for m in matched_by_name if m.get("skill_level")
+            })
 
-            return f"Here are the {user_skill.capitalize()} learning materials:\n\n{learning_list}"
+            if not available_skills:
+                return (
+                    f"❌ '{query.title()}' is not available in "
+                    f"{user_skill.capitalize()} level, and no other skill levels were found."
+                )
 
-        return "What is your skill level? (Beginner / Intermediate / Advanced)"
+            return (
+                f"❌ '{query.title()}' is not available in "
+                f"{user_skill.capitalize()} level.<br><br>"
+                f"✅ Available levels for this material:<br>"
+                + ", ".join(available_skills)
+            )
 
-        # ==========================================
-    # 🔥 UPDATED PRODUCT SECTION
-    # ==========================================
-    if intent == "product":
-
-        if not products:
-            return "You have no assigned products."
-
-        q = question.lower()
-
-        desc_markers = [
-            "describe", "description", "details",
-            "tell me about", "what is", "explain",
-            "overview", "info"
+        # 🟢 Only skill level given → list all materials for that level
+        filtered_learning = [
+            m for m in learning
+            if m.get("skill_level", "").lower() == user_skill
         ]
 
-        # -----------------------------
-        # If asking for description
-        # -----------------------------
+        if not filtered_learning:
+            return f"No {user_skill.capitalize()} learning materials found."
+
+        # ✅ Clickable links for material list
+        learning_list = "<br>".join([
+            f"- <b>{m['material']}</b> ({m.get('skill_level')}) → "
+            f"<a href='{m.get('link')}' target='_blank' "
+            f"style='color:#007bff;text-decoration:none;'>Open Resource</a>"
+            for m in filtered_learning
+        ])
+
+        return (
+            f"Here are the {user_skill.capitalize()} learning materials:<br><br>"
+            f"{learning_list}<br><br>"
+            f"Tell me which one you want details about."
+        )
+
+
+    # ==========================================
+    # PRODUCT SECTION
+    # ==========================================
+    if intent == "product":
+        if not products:
+            return "You have no assigned products."
+        q = question.lower()
+        desc_markers = ["describe", "description", "details", "tell me about", "what is", "explain", "overview", "info"]
         if any(marker in q for marker in desc_markers):
-
             words = re.findall(r"[a-z0-9]+", q)
-
-            stop = {
-                "product", "products", "describe", "description",
-                "details", "tell", "about", "what", "is",
-                "the", "give", "me", "info", "overview", "explain"
-            }
-
+            stop = {"product","products","describe","description","details","tell","about","what","is","the","give","me","info","overview","explain"}
             keywords = [w for w in words if w not in stop and len(w) > 2]
-
             best_product = find_best_product(products, " ".join(keywords))
-
             if best_product:
                 description = get_product_description(best_product, learning)
                 return f"📌 {best_product}\n\n{description}"
-
             return "Which product are you asking about?"
-
-        # -----------------------------
-        # Otherwise list products
-        # -----------------------------
         product_list = "\n".join([f"- {p}" for p in products])
         return f"Here are your assigned products:\n\n{product_list}"
 
-        
     # ==========================================
     # FALLBACK TO GROQ
     # ==========================================
@@ -427,77 +478,35 @@ Use short and clear answers.
 # -----------------------------------
 @app.route("/", methods=["GET", "POST"])
 def index():
-
     session.setdefault("chat_history", [])
-
     products = get_employee_products(USER_ID)
-    learning = get_learning_materials(USER_ID)
+    learning = normalize_learning(get_learning_materials(USER_ID))  # ✅ FIX: Normalize here
     vouchers = get_certification_vouchers(USER_ID)
 
     if request.method == "POST":
-
-        # -------------------------------
-        # Voucher Form Submission
-        # -------------------------------
         if "certification_name" in request.form:
             name = request.form.get("name", "").strip()
             certification_name = request.form.get("certification_name", "").strip()
-
-            # Find matching voucher
-            selected_voucher = next(
-                (v for v in vouchers if certification_name.lower() in v["name"].lower()), 
-                None
-            )
-
+            duration = request.form.get("duration", "").strip()
+            selected_voucher = next((v for v in vouchers if certification_name.lower() in v["name"].lower()), None)
             if not selected_voucher:
-                response = (
-                    f"❌ The certification '{certification_name}' is NOT available in your assigned vouchers.\n"
-                    "Please check your available certifications and try again."
-                )
+                response = f"❌ The certification '{certification_name}' is NOT available in your assigned vouchers.\nPlease check your available certifications and try again."
             else:
                 expiry_date = selected_voucher.get("expiry_date", "N/A")
-                email_status = send_voucher_email(name, certification_name, expiry_date)
-
+                email_status = send_voucher_email(name, certification_name, duration, expiry_date)
                 if email_status == "sent":
-                    response = (
-                        f"✅ The certification '{certification_name}' is available.\n"
-                        "Your voucher request has been submitted successfully.\n"
-                        "📧 Email notification sent."
-                    )
+                    response = f"✅ The certification '{certification_name}' is available.\nYour voucher request has been submitted successfully.\n📧 Email notification sent."
                 elif email_status == "saved":
-                    response = (
-                        f"✅ The certification '{certification_name}' is available.\n"
-                        "Your voucher request has been submitted successfully.\n"
-                        "⚠️ Email saved to logs (Network Unavailable)."
-                    )
+                    response = f"✅ The certification '{certification_name}' is available.\nYour voucher request has been submitted successfully.\n⚠️ Email saved to logs (Network Unavailable)."
                 else:
-                    response = (
-                        f"✅ The certification '{certification_name}' is available.\n"
-                        "⚠️ Email service is currently unavailable.\n"
-                        "Please try again later."
-                    )
-
-            # Add both user question and AI response to chat history
-            formatted_request = (
-                "📋 Voucher Request Submitted\n"
-                f"👤 Name: {name}\n"
-                f"🎓 Certification: {certification_name}"
-            )
-            session["chat_history"].append({
-                "question": formatted_request,
-                "answer": response
-            })
-
+                    response = f"✅ The certification '{certification_name}' is available.\n⚠️ Email service is currently unavailable.\nPlease try again later."
+            formatted_request = f"📋 Voucher Request Submitted\n👤 Name: {name}\n🎓 Certification: {certification_name}"
+            session["chat_history"].append({"question": formatted_request, "answer": response})
             try:
                 save_chat_history(USER_ID, formatted_request, response)
             except Exception:
                 pass
 
-            # Continue to normal flow to show the response
-
-        # -------------------------------
-        # Normal Chat Input
-        # -------------------------------
         question = request.form.get("question", "").strip()
         if question:
             answer = groq_answer(question, session["chat_history"], products, learning, vouchers)
@@ -507,13 +516,7 @@ def index():
             except Exception:
                 pass
 
-    return render_template(
-        "index.html",
-        products=products,
-        learning=learning,
-        vouchers=vouchers,
-        chat_history=session["chat_history"]
-    )
+    return render_template("index.html", products=products, learning=learning, vouchers=vouchers, chat_history=session["chat_history"])
 
 # -----------------------------------
 # Clear Chat
