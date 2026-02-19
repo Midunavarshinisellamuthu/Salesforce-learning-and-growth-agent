@@ -369,43 +369,48 @@ def groq_answer(question, chat_history, products, learning, vouchers):
             if not matched_by_name:
                 return f"No learning materials found for '{query}'."
 
-            # 🎯 Exact skill match check
+                                    # 🎯 Exact skill match check
             exact_skill_match = [
                 m for m in matched_by_name
                 if m.get("skill_level", "").lower() == user_skill
             ]
 
+            # 🚫 If requested level not available → show available levels instead of description
+            if not exact_skill_match:
+                # Find all available levels for the same material name
+                available_levels = sorted({
+                    m.get("skill_level", "").capitalize()
+                    for m in learning
+                    if m.get("material", "").lower() == matched_by_name[0].get("material", "").lower()
+                    and m.get("skill_level")
+                })
+
+                if not available_levels:
+                    return (
+                        f"❌ '{query.title()}' is not available in "
+                        f"{user_skill.capitalize()} level, and no other skill levels were found."
+                    )
+
+                available_str = ", ".join(available_levels)
+                return (
+                    f"❌ <b>{query.title()}</b> is not available in "
+                    f"<b>{user_skill.capitalize()}</b> level.<br><br>"
+                    f"✅ Available only in: <b>{available_str}</b> level."
+                )
+
             # ✅ If available in the requested skill level → show info
-            if exact_skill_match:
-                m = exact_skill_match[0]
-                return (
-                    f"📘 <b>{m['material']}</b><br><br>"
-                    f"<b>Product:</b> {m.get('product')}<br>"
-                    f"<b>Skill Level:</b> {m.get('skill_level')}<br>"
-                    f"<b>Type:</b> {m.get('material_type')}<br>"
-                    f"<b>Link:</b> "
-                    f"<a href='{m.get('link')}' target='_blank' "
-                    f"style='color:#007bff;text-decoration:none;'>Open Resource</a>"
-                )
-
-            # 🚫 Requested skill level not available — don't give description
-            available_skills = sorted({
-                m.get("skill_level", "").capitalize()
-                for m in matched_by_name if m.get("skill_level")
-            })
-
-            if not available_skills:
-                return (
-                    f"❌ '{query.title()}' is not available in "
-                    f"{user_skill.capitalize()} level, and no other skill levels were found."
-                )
-
+            m = exact_skill_match[0]
             return (
-                f"❌ '{query.title()}' is not available in "
-                f"{user_skill.capitalize()} level.<br><br>"
-                f"✅ Available levels for this material:<br>"
-                + ", ".join(available_skills)
+                f"📘 <b>{m['material']}</b><br><br>"
+                f"<b>Product:</b> {m.get('product')}<br>"
+                f"<b>Skill Level:</b> {m.get('skill_level')}<br>"
+                f"<b>Type:</b> {m.get('material_type')}<br>"
+                f"<b>Link:</b> "
+                f"<a href='{m.get('link')}' target='_blank' "
+                f"style='color:#007bff;text-decoration:none;'>Open Resource</a>"
             )
+
+
 
         # 🟢 Only skill level given → list all materials for that level
         filtered_learning = [
