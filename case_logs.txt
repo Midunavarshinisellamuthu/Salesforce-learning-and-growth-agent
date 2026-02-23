@@ -1,0 +1,22 @@
+
+==============================
+TO: varshinisellamuthu3004@gmail.com
+FROM: varshinisellamuthu3004@gmail.com
+SUBJECT: Case Submission
+Salesforce Case Request (from Learning Agent)
+
+Material: salesforce crm
+Requested Skill Level: Advanced
+Subject: Salesforce CRM
+Contact Email: midunavarshinis.23cse@kongu.edu
+Account Name: Winfomi
+Priority: High
+Origin: Web
+Status: New
+
+Description:
+give learning material for saesforce crm in advanced level
+
+Submitted via Salesforce Learning Agent.
+
+==============================

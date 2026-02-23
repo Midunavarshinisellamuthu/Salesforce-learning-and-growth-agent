@@ -83,6 +83,80 @@ After submission, check whether your voucher request is approved/processed.<br>
 🔟 <b>Contact Admin Only If Voucher Is Missing or Expired</b>
 Raise issues only when vouchers are not visible or already expired."""
 
+# -----------------------------------
+# Important Case fields & Case form renderer
+# -----------------------------------
+CASE_FIELDS = [
+    ("case_subject", "Subject"),               # Subject (text)
+    ("case_contact_email", "Contact Email"),   # ContactEmail (email)
+    ("case_account_name", "Account Name"),     # Account Name (text)
+    ("case_priority", "Priority"),             # Priority (picklist)
+    ("case_origin", "Origin"),                 # Origin (picklist)
+    ("case_status", "Status"),                 # Status (picklist)
+    ("case_description", "Description")        # Description (textarea)
+]
+
+def render_case_form(material_name, skill_level):
+    """
+    Return HTML for a Case form to collect important Case fields.
+    This HTML is returned inline by the chatbot when a learning material is missing.
+    """
+    priority_options = ["Medium", "High", "Low"]
+    origin_options = ["Web", "Email", "Phone", "Other"]
+    status_options = ["New", "Working", "Escalated", "Closed"]
+
+    material_safe = (material_name or "").replace('"', "&quot;").replace("'", "&#39;")
+    skill_safe = (skill_level or "").capitalize()
+
+    form_html = (
+        f"<b>Learning material '{material_safe}' not found (requested level: {skill_safe})</b><br><br>"
+        "Please fill the form below to create a Case (admin will be notified):<br><br>"
+        f"<form method='post' style='margin-top:10px;' onsubmit='return validateForm(this)'>"
+        f"<input type='hidden' name='case_material' value=\"{material_safe}\">"
+        f"<input type='hidden' name='case_skill' value=\"{skill_safe}\">"
+    )
+
+    for name, label in CASE_FIELDS:
+        if name == "case_description":
+            form_html += (
+                f"<div class='mb-2'><label>{label}</label>"
+                f"<textarea class='form-control' name='{name}' placeholder='Describe the issue...' required></textarea></div>"
+            )
+        elif name == "case_priority":
+            form_html += "<div class='mb-2'><label>Priority</label><select class='form-control' name='case_priority' required>"
+            for opt in priority_options:
+                form_html += f"<option value='{opt}'>{opt}</option>"
+            form_html += "</select></div>"
+        elif name == "case_origin":
+            form_html += "<div class='mb-2'><label>Origin</label><select class='form-control' name='case_origin' required>"
+            for opt in origin_options:
+                form_html += f"<option value='{opt}'>{opt}</option>"
+            form_html += "</select></div>"
+        elif name == "case_status":
+            form_html += "<div class='mb-2'><label>Status</label><select class='form-control' name='case_status' required>"
+            for opt in status_options:
+                form_html += f"<option value='{opt}'>{opt}</option>"
+            form_html += "</select></div>"
+        else:
+            placeholder = "Enter " + label
+            input_type = "email" if "email" in name else "text"
+            form_html += f"<div class='mb-2'><label>{label}</label><input type='{input_type}' class='form-control' name='{name}' placeholder='{placeholder}' required></div>"
+
+    form_html += "<button type='submit' class='btn btn-primary btn-sm'>Submit Case</button></form>"
+
+    form_html += """
+    <script>
+    function validateForm(form) {
+        const submitBtn = form.querySelector('button[type="submit"]');
+        if (submitBtn.disabled) return false;
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Submitting...';
+        return true;
+    }
+    </script>
+    """
+
+    return form_html
 
 # -----------------------------------
 # Helper Functions
@@ -207,11 +281,11 @@ Submitted via Salesforce Learning Agent.
             )
             sg = SendGridAPIClient(api_key)
             sg.send(message)
-            print("✅ Email sent successfully (SendGrid)")
+            print("Email sent successfully (SendGrid)")
             return "sent"
         else:
             if not sender or not password:
-                print("❌ Email credentials missing")
+                print("Email credentials missing")
                 return False
             msg = MIMEMultipart()
             msg["From"] = sender
@@ -223,20 +297,20 @@ Submitted via Salesforce Learning Agent.
             server.login(sender, password)
             server.sendmail(sender, receiver, msg.as_string())
             server.quit()
-            print("✅ Email sent successfully")
+            print("Email sent successfully")
             return "sent"
     except Exception as e:
-        print(f"❌ Email error: {e}")
+        print(f"Email error: {e}")
         try:
             log_file = "email_logs.txt"
             with open(log_file, "a", encoding="utf-8") as f:
                 f.write(f"\n{'='*30}\nTO: {receiver}\nFROM: {sender}\nSUBJECT: Certification Voucher Request\n")
                 f.write(body)
                 f.write(f"\n{'='*30}\n")
-            print(f"✅ Email saved locally to {log_file} (Simulation Mode)")
+            print(f"Email saved locally to {log_file} (Simulation Mode)")
             return "saved"
         except Exception as log_error:
-            print(f"❌ Failed to save email log: {log_error}")
+            print(f"Failed to save email log: {log_error}")
             return False
 
 # -----------------------------------
@@ -365,9 +439,9 @@ def groq_answer(question, chat_history, products, learning, vouchers):
                         if m.get("material", "").lower() == matches[0]
                     ]
 
-            # ❌ No matching material found at all
             if not matched_by_name:
-                return f"No learning materials found for '{query}'."
+                # Material not found → return a Case form (collect Case details)
+                return render_case_form(query, user_skill or "unspecified")
 
                                     # 🎯 Exact skill match check
             exact_skill_match = [
@@ -377,31 +451,40 @@ def groq_answer(question, chat_history, products, learning, vouchers):
 
             # 🚫 If requested level not available → show available levels instead of description
             if not exact_skill_match:
-                # Find all available levels for the same material name
+    # Safely find all available levels for the same material name
                 available_levels = sorted({
-                    m.get("skill_level", "").capitalize()
-                    for m in learning
-                    if m.get("material", "").lower() == matched_by_name[0].get("material", "").lower()
-                    and m.get("skill_level")
-                })
+                m.get("skill_level", "").capitalize()
+                for m in learning
+                if m.get("material", "").lower() == matched_by_name[0].get("material", "").lower()
+                and m.get("skill_level")
+    }) if matched_by_name else []
+                
 
+                available_str = ", ".join(available_levels) if available_levels else "None"
+
+    # 🟡 Always offer the Case form so user can request the missing level
+                form_html = render_case_form(query, user_skill or "unspecified")
+
+    # If there are no other levels at all, change wording slightly
                 if not available_levels:
                     return (
-                        f"❌ '{query.title()}' is not available in "
-                        f"{user_skill.capitalize()} level, and no other skill levels were found."
-                    )
+            f"<b>{query.title()}</b> is not available in "
+            f"<b>{user_skill.capitalize()}</b> level, and no other levels were found.<br><br>"
+            f"{form_html}"
+        )
 
-                available_str = ", ".join(available_levels)
+    # Otherwise show available levels + Case form
                 return (
-                    f"❌ <b>{query.title()}</b> is not available in "
-                    f"<b>{user_skill.capitalize()}</b> level.<br><br>"
-                    f"✅ Available only in: <b>{available_str}</b> level."
-                )
+        f"<b>{query.title()}</b> is not available in "
+        f"<b>{user_skill.capitalize()}</b> level.<br><br>"
+        f"Available only in: <b>{available_str}</b> level.<br><br>"
+        f"{form_html}"
+    )
 
             # ✅ If available in the requested skill level → show info
             m = exact_skill_match[0]
             return (
-                f"📘 <b>{m['material']}</b><br><br>"
+                f"📘<b>{m['material']}</b><br><br>"
                 f"<b>Product:</b> {m.get('product')}<br>"
                 f"<b>Skill Level:</b> {m.get('skill_level')}<br>"
                 f"<b>Type:</b> {m.get('material_type')}<br>"
@@ -451,7 +534,7 @@ def groq_answer(question, chat_history, products, learning, vouchers):
             best_product = find_best_product(products, " ".join(keywords))
             if best_product:
                 description = get_product_description(best_product, learning)
-                return f"📌 {best_product}\n\n{description}"
+                return f"{best_product}\n\n{description}"
             return "Which product are you asking about?"
         product_list = "\n".join([f"- {p}" for p in products])
         return f"Here are your assigned products:\n\n{product_list}"
@@ -488,23 +571,26 @@ def index():
     learning = normalize_learning(get_learning_materials(USER_ID))  # ✅ FIX: Normalize here
     vouchers = get_certification_vouchers(USER_ID)
 
-    if request.method == "POST":
+    if request.method == "POST": 
+        # -------------------------------
+        # Certification Voucher Form Submission
+        # -------------------------------
         if "certification_name" in request.form:
             name = request.form.get("name", "").strip()
             certification_name = request.form.get("certification_name", "").strip()
             duration = request.form.get("duration", "").strip()
             selected_voucher = next((v for v in vouchers if certification_name.lower() in v["name"].lower()), None)
             if not selected_voucher:
-                response = f"❌ The certification '{certification_name}' is NOT available in your assigned vouchers.\nPlease check your available certifications and try again."
+                response = f" The certification '{certification_name}' is NOT available in your assigned vouchers.\nPlease check your available certifications and try again."
             else:
                 expiry_date = selected_voucher.get("expiry_date", "N/A")
                 email_status = send_voucher_email(name, certification_name, duration, expiry_date)
                 if email_status == "sent":
-                    response = f"✅ The certification '{certification_name}' is available.\nYour voucher request has been submitted successfully.\n📧 Email notification sent."
+                    response = f" The certification '{certification_name}' is available.\nYour voucher request has been submitted successfully.\n📧 Email notification sent."
                 elif email_status == "saved":
-                    response = f"✅ The certification '{certification_name}' is available.\nYour voucher request has been submitted successfully.\n⚠️ Email saved to logs (Network Unavailable)."
+                    response = f"The certification '{certification_name}' is available.\nYour voucher request has been submitted successfully.\n⚠️ Email saved to logs (Network Unavailable)."
                 else:
-                    response = f"✅ The certification '{certification_name}' is available.\n⚠️ Email service is currently unavailable.\nPlease try again later."
+                    response = f"The certification '{certification_name}' is available.\n⚠️ Email service is currently unavailable.\nPlease try again later."
             formatted_request = f"📋 Voucher Request Submitted\n👤 Name: {name}\n🎓 Certification: {certification_name}"
             session["chat_history"].append({"question": formatted_request, "answer": response})
             try:
@@ -512,6 +598,79 @@ def index():
             except Exception:
                 pass
 
+        # -------------------------------
+        # Case Form Submission (when learning material not found)
+        # -------------------------------
+        if "case_description" in request.form or "case_subject" in request.form or "case_material" in request.form:
+            case_material = request.form.get("case_material", "").strip()
+            case_skill = request.form.get("case_skill", "").strip()
+            case_subject = request.form.get("case_subject", "").strip() or f"Missing learning material - {case_material}"
+            case_contact_email = request.form.get("case_contact_email", "").strip()
+            case_account_name = request.form.get("case_account_name", "").strip()
+            case_priority = request.form.get("case_priority", "Medium").strip()
+            case_origin = request.form.get("case_origin", "Web").strip()
+            case_status = request.form.get("case_status", "New").strip()
+            case_description = request.form.get("case_description", "").strip()
+
+            body = f"""Salesforce Case Request (from Learning Agent)
+
+Material: {case_material}
+Requested Skill Level: {case_skill}
+Subject: {case_subject}
+Contact Email: {case_contact_email}
+Account Name: {case_account_name}
+Priority: {case_priority}
+Origin: {case_origin}
+Status: {case_status}
+
+Description:
+{case_description}
+
+Submitted via Salesforce Learning Agent.
+"""
+
+            sender = os.getenv("EMAIL_SENDER")
+            password = os.getenv("EMAIL_PASSWORD")
+            receiver = os.getenv("ADMIN_EMAIL", "varshinisellamuthu3004@gmail.com")
+
+            try:
+                msg = MIMEMultipart()
+                msg["From"] = sender
+                msg["To"] = receiver
+                msg["Subject"] = f"[Case] {case_subject}"
+                msg.attach(MIMEText(body, "plain"))
+                server = smtplib.SMTP("smtp.gmail.com", 587, timeout=20)
+                server.starttls()
+                server.login(sender, password)
+                server.sendmail(sender, receiver, msg.as_string())
+                server.quit()
+                response = "Case submitted and admin notified via email."
+            except Exception as e:
+                try:
+                    log_file = "case_logs.txt"
+                    with open(log_file, "a", encoding="utf-8") as f:
+                        f.write(f"\n{'='*30}\nTO: {receiver}\nFROM: {sender}\nSUBJECT: Case Submission\n")
+                        f.write(body)
+                        f.write(f"\n{'='*30}\n")
+                    response = " Email failed — case saved to local logs (case_logs.txt)."
+                except Exception as log_e:
+                    response = f" Failed to submit case: {e}"
+
+            formatted_req = (
+                f"Case Submitted\n"
+                f"Material: {case_material}\n"
+                f"Requested Level: {case_skill}\n"
+                f"Subject: {case_subject}"
+            )
+            session["chat_history"].append({"question": formatted_req, "answer": response})
+            try:
+                save_chat_history(USER_ID, formatted_req, response)
+            except Exception:
+                pass
+
+        # -------------------------------
+        # Normal Question Input
+        # -------------------------------
         question = request.form.get("question", "").strip()
         if question:
             answer = groq_answer(question, session["chat_history"], products, learning, vouchers)
@@ -522,7 +681,6 @@ def index():
                 pass
 
     return render_template("index.html", products=products, learning=learning, vouchers=vouchers, chat_history=session["chat_history"])
-
 # -----------------------------------
 # Clear Chat
 # -----------------------------------
